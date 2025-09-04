@@ -4,6 +4,7 @@ from enum import Enum
 from dataclasses import dataclass
 
 import numpy as np
+from psygnal import Signal
 
 #### General Dataclasses for representing data structures ####
 class Landmark(Enum):
@@ -117,38 +118,19 @@ class EventManager(ABC):
 
 class StreamInterface(ABC):
     """Abstract base class for stream interfaces."""
+    @abstractmethod
+    def read_frame(self) -> np.ndarray:
+        """Read a frame from the data stream."""
+        raise NotImplementedError
+
+    @abstractmethod
     def start_stream(self):
         """Start the data stream."""
         raise NotImplementedError
 
+    @abstractmethod
     def stop_stream(self):
         """Stop the data stream."""
-        raise NotImplementedError
-    
-class ManagerInterface(ABC):
-    """Abstract base class for manager interfaces."""
-    def configure(self, config: Dict):
-        """Configure the interface with the given settings."""
-        raise NotImplementedError
-    
-    def connect_stream(self, stream: StreamInterface):
-        """Connect a stream interface to the manager."""
-        raise NotImplementedError
-    
-    def disconnect_stream(self, stream: StreamInterface):
-        """Disconnect a stream interface from the manager."""
-        raise NotImplementedError
-    
-    def get_streams(self) -> Dict[str, StreamInterface]:
-        """Get a dictionary of currently connected streams."""
-        raise NotImplementedError
-    
-    def set_event_manager(self, event_manager: EventManager):
-        """Set the event manager for handling events."""
-        raise NotImplementedError
-
-    def get_status(self) -> Dict:
-        """Get the current status of the interface."""
         raise NotImplementedError
     
 class LandmarkPredictorInterface(ABC):
