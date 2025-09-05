@@ -17,12 +17,9 @@
     # Allows training of models from training data in /data
 # Visualization module
     # Enables testing by visualizing landmarks (optional) and classified gestures (optional) with data in real-time
-    
-from handi.types import ManagerInterface
 
-class HandIInterface(ManagerInterface):
+
+class HandIInterface:
     def __init__(self):
         """Initialize the Hand-I interface."""
         super().__init__()
-        
-    

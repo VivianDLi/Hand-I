@@ -3,29 +3,33 @@ import numpy as np
 
 from handi.types import StreamInterface
 
+
 class CameraStream(StreamInterface):
     def __init__(self, camera_id: int = 0):
         self.camera_id = camera_id
 
-    def read_frame(self) -> np.ndarray:
+    def _read_frame(self) -> tuple[np.ndarray, int]:
         if not self.is_streaming:
-            return np.empty((0, 0, 3), dtype=np.uint8)
+            return np.empty((0, 0, 3), dtype=np.uint8), 0
         ret, frame = self.cap.read()
         if not ret:
-            return np.empty((0, 0, 3), dtype=np.uint8)
-        return frame
+            return np.empty((0, 0, 3), dtype=np.uint8), 0
+        timestamp_ms = int(cv2.getTickCount() / cv2.getTickFrequency() * 1000)
+        return frame, timestamp_ms
 
-    def start_stream(self):
+    def start(self):
         if self.is_streaming:
             return
         self.cap = cv2.VideoCapture(self.camera_id)
         self.is_streaming = True
-        
+
         # Stream loop
         while self.is_streaming:
             self.read_frame()
+            if cv2.waitKey(1) == ord('q'):
+                break
 
-    def stop_stream(self):
+    def stop(self):
         if not self.is_streaming:
             return
         self.cap.release()
