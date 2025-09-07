@@ -7,15 +7,18 @@ from psygnal import Signal
 
 #### General Dataclasses for representing data structures ####
 
+
 class EventType(Enum):
     STREAM_RECEIVED = "stream_received"
     LANDMARK_PREDICTED = "landmark_predicted"
     GESTURE_CLASSIFIED = "gesture_classified"
 
+
 class EventDataType(Enum):
     IMAGE = "image"
     DVS = "dvs"
     EMG = "emg"
+
 
 class Landmark(Enum):
     WRIST = 0
@@ -40,6 +43,7 @@ class Landmark(Enum):
     PINKY_FINGER_DIP = 19
     PINKY_FINGER_TIP = 20
 
+
 class Angle(Enum):
     THUMB_CMC_ABDUCTION = "thumb_cmc_abduction"
     THUMB_CMC_FLEXION = "thumb_cmc_flexion"
@@ -58,6 +62,7 @@ class Angle(Enum):
     PINKY_FINGER_PIP_FLEXION = "pinky_finger_pip_flexion"
     PINKY_FINGER_DIP_FLEXION = "pinky_finger_dip_flexion"
 
+
 @dataclass
 class LandmarkCoords:
     """Represents a single hand landmark coordinate.
@@ -67,11 +72,14 @@ class LandmarkCoords:
         y (float): The y-coordinate of the landmark.
         z (float): The z-coordinate of the landmark.
     """
+
     x: float
     y: float
     z: float
 
+
 #### Interface Dataclasses for representing data to pass between components ####
+
 
 @dataclass
 class GestureConfig:
@@ -83,10 +91,12 @@ class GestureConfig:
         max_value (Dict[Landmark, LandmarkCoords]): The maximum value in world coordinates for each landmark of the hand. Assumes a right hand.
         time_delay (float): The time delay in seconds for the gesture to be held before classification.
     """
+
     name: str
     min_value: dict[Landmark, LandmarkCoords]
     max_value: dict[Landmark, LandmarkCoords]
     time_delay: float
+
 
 @dataclass
 class LandmarkResult:
@@ -98,6 +108,7 @@ class LandmarkResult:
         angles (Dict[str, float]): A dictionary containing the calculated angles based on the landmarks.
         handedness (bool): Indicates if the hand is left (False) or right (True).
     """
+
     landmarks: dict[Landmark, LandmarkCoords]
     world_landmarks: dict[Landmark, LandmarkCoords]
     handedness: bool
@@ -111,6 +122,7 @@ class LandmarkResult:
         # TODO: Implement angle calculation logic here
         return angles
 
+
 @dataclass
 class TrackingResult:
     """Result of tracking hands.
@@ -120,9 +132,11 @@ class TrackingResult:
         right_hand (Optional[LandmarkResult]): The result of landmark prediction for the right hand.
         timestamp (float): The timestamp when the tracking was performed.
     """
+
     left_hand: LandmarkResult | None = None
     right_hand: LandmarkResult | None = None
     timestamp: float = 0.0
+
 
 @dataclass
 class GestureResult:
@@ -133,15 +147,21 @@ class GestureResult:
         duration (float): The duration in seconds for which the gesture was held.
         handedness (bool): Indicates if the hand is left (False) or right (True).
     """
+
     gesture: str
     duration: float
     handedness: bool
 
+
 #### Abstract Base Classes for Interface Components ####
 class StreamInterface(ABC):
     """Abstract base class for stream interfaces."""
+
     data_type: EventDataType
-    frame_read = Signal(np.ndarray, int)  # Signal emitting a frame and its timestamp in ms
+    frame_read = Signal(
+        np.ndarray, int
+    )  # Signal emitting a frame and its timestamp in ms
+    is_streaming: bool = False
 
     @abstractmethod
     def _read_frame(self) -> tuple[np.ndarray, int]:
@@ -163,24 +183,35 @@ class StreamInterface(ABC):
         """Stop the data stream."""
         raise NotImplementedError
 
+
 class LandmarkPredictorInterface(ABC):
     """Abstract base class for landmark predictor interfaces."""
+
     data_type: EventDataType
     landmark_predicted = Signal(np.ndarray, TrackingResult)
+    is_running: bool = False
 
     @abstractmethod
-    def predict_landmarks(self, image: np.ndarray, frame_timestamp_ms: int) -> None:
+    def predict_landmarks(
+        self, image: np.ndarray, frame_timestamp_ms: int
+    ) -> None:
         """Predict landmarks from the given image. To be connected to frame received signal."""
         raise NotImplementedError
 
     @abstractmethod
-    def _process_results(self, result, original_image, timestamp_ms: int) -> tuple[np.ndarray, TrackingResult]:
+    def _process_results(
+        self, result, original_image, timestamp_ms: int
+    ) -> tuple[np.ndarray, TrackingResult]:
         """Processes the results into standard form after landmark prediction."""
         raise NotImplementedError
 
-    def process_results(self, result, original_image, timestamp_ms: int) -> None:
+    def process_results(
+        self, result, original_image, timestamp_ms: int
+    ) -> None:
         """Processes the results into standard form after landmark prediction. To emit the landmark predicted signal."""
-        data, landmarks = self._process_results(result, original_image, timestamp_ms)
+        data, landmarks = self._process_results(
+            result, original_image, timestamp_ms
+        )
         self.landmark_predicted.emit(data, landmarks)
 
     @abstractmethod
@@ -193,9 +224,12 @@ class LandmarkPredictorInterface(ABC):
         """Close the landmark predictor and release resources."""
         raise NotImplementedError
 
+
 class GestureClassifierInterface(ABC):
     """Abstract base class for gesture classifier interfaces."""
+
     gesture_classified = Signal(GestureResult)
+    is_running: bool = False
 
     @abstractmethod
     def classify_gesture(self, landmarks: TrackingResult) -> None:
@@ -222,12 +256,18 @@ class GestureClassifierInterface(ABC):
         """Close the gesture classifier and release resources."""
         raise NotImplementedError
 
+
 #### Event Manager for managing connections between components ####
 class EventManager:
     """Class for managing events."""
+
     def __init__(self):
-        self.streams: dict[EventDataType, list[StreamInterface]] = {dtype: [] for dtype in EventDataType}
-        self.predictors: dict[EventDataType, list[LandmarkPredictorInterface]] = {dtype: [] for dtype in EventDataType}
+        self.streams: dict[EventDataType, list[StreamInterface]] = {
+            dtype: [] for dtype in EventDataType
+        }
+        self.predictors: dict[
+            EventDataType, list[LandmarkPredictorInterface]
+        ] = {dtype: [] for dtype in EventDataType}
         self.classifiers: list[GestureClassifierInterface] = []
 
     def connect_stream(self, stream: StreamInterface):
@@ -254,7 +294,9 @@ class EventManager:
                 stream.frame_read.connect(predictor.predict_landmarks)
             # Connect to all classifiers
             for classifier in self.classifiers:
-                predictor.landmark_predicted.connect(classifier.classify_gesture)
+                predictor.landmark_predicted.connect(
+                    classifier.classify_gesture
+                )
         self.predictors[predictor.data_type].append(predictor)
 
     def disconnect_predictor(self, predictor: LandmarkPredictorInterface):
@@ -274,7 +316,9 @@ class EventManager:
             # Connect all valid predictors
             for dtype in self.predictors:
                 for predictor in self.predictors[dtype]:
-                    predictor.landmark_predicted.connect(classifier.classify_gesture)
+                    predictor.landmark_predicted.connect(
+                        classifier.classify_gesture
+                    )
 
     def disconnect_classifier(self, classifier: GestureClassifierInterface):
         """Disconnect a gesture classifier from the event manager."""
@@ -282,7 +326,9 @@ class EventManager:
             # Disconnect all connected predictors
             for dtype in self.predictors:
                 for predictor in self.predictors[dtype]:
-                    predictor.landmark_predicted.disconnect(classifier.classify_gesture)
+                    predictor.landmark_predicted.disconnect(
+                        classifier.classify_gesture
+                    )
         self.classifiers.remove(classifier)
 
     def close(self):

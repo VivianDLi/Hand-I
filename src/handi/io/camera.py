@@ -1,11 +1,12 @@
 import cv2
 import numpy as np
 
-from handi.types import StreamInterface
+from handi.types import EventDataType, StreamInterface
 
 
 class CameraStream(StreamInterface):
     def __init__(self, camera_id: int = 0):
+        self.data_type = EventDataType.IMAGE
         self.camera_id = camera_id
 
     def _read_frame(self) -> tuple[np.ndarray, int]:
@@ -26,7 +27,7 @@ class CameraStream(StreamInterface):
         # Stream loop
         while self.is_streaming:
             self.read_frame()
-            if cv2.waitKey(1) == ord('q'):
+            if cv2.waitKey(1) == ord("q"):
                 break
 
     def stop(self):
