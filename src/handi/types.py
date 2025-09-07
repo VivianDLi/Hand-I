@@ -168,10 +168,13 @@ class StreamInterface(ABC):
         """Read a frame from the data stream."""
         raise NotImplementedError
 
-    def read_frame(self) -> None:
+    def read_frame(self, *args) -> bool:
         """Read a frame and emit the frame read signal."""
         frame, timestamp_ms = self._read_frame()
+        if timestamp_ms == -1:
+            return False
         self.frame_read.emit(frame, timestamp_ms)
+        return True
 
     @abstractmethod
     def start(self):

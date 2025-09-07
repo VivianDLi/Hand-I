@@ -29,12 +29,11 @@ class MediapipeInterface(LandmarkPredictorInterface):
     def __init__(self):
         self.data_type = EventDataType.IMAGE
         self.base_options = BaseOptions(model_asset_path=str(MODEL_PATH))
-        self.running_mode = RunningMode.LIVE_STREAM
+        self.running_mode = RunningMode.VIDEO
         self.options = HandLandmarkerOptions(
             base_options=self.base_options,
             running_mode=self.running_mode,
             num_hands=2,
-            result_callback=self.process_results,
         )
 
     @override
@@ -47,7 +46,10 @@ class MediapipeInterface(LandmarkPredictorInterface):
                 "MediapipeInterface is not running. Call start() before predicting landmarks."
             )
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
-        self.landmark_predictor.detect_async(mp_image, frame_timestamp_ms)
+        result = self.landmark_predictor.detect_for_video(
+            mp_image, frame_timestamp_ms
+        )
+        self.process_results(result, mp_image, frame_timestamp_ms)
 
     @override
     def _process_results(

@@ -11,23 +11,24 @@ class CameraStream(StreamInterface):
 
     def _read_frame(self) -> tuple[np.ndarray, int]:
         if not self.is_streaming:
-            return np.empty((0, 0, 3), dtype=np.uint8), 0
+            return np.empty((0, 0, 3), dtype=np.uint8), -1
         ret, frame = self.cap.read()
         if not ret:
-            return np.empty((0, 0, 3), dtype=np.uint8), 0
+            return np.empty((0, 0, 3), dtype=np.uint8), -1
         timestamp_ms = int(cv2.getTickCount() / cv2.getTickFrequency() * 1000)
-        return frame, timestamp_ms
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return rgb_frame, timestamp_ms
 
     def start(self):
         if self.is_streaming:
             return
         self.cap = cv2.VideoCapture(self.camera_id)
+        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.is_streaming = True
 
-        # Stream loop
-        while self.is_streaming:
-            self.read_frame()
-            if cv2.waitKey(1) == ord("q"):
+        while self.cap.isOpened() and self.is_streaming:
+            ret = self.read_frame()
+            if not ret:
                 break
 
     def stop(self):
@@ -35,4 +36,3 @@ class CameraStream(StreamInterface):
             return
         self.cap.release()
         self.is_streaming = False
-        self.camera_id = self.camera_id
