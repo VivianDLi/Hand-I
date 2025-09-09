@@ -45,22 +45,22 @@ class Landmark(Enum):
 
 
 class Angle(Enum):
-    THUMB_CMC_ABDUCTION = "thumb_cmc_abduction"
-    THUMB_CMC_FLEXION = "thumb_cmc_flexion"
-    THUMB_MCP_FLEXION = "thumb_mcp_flexion"
-    THUMB_IP_FLEXION = "thumb_ip_flexion"
-    INDEX_FINGER_MCP_FLEXION = "index_finger_mcp_flexion"
-    INDEX_FINGER_PIP_FLEXION = "index_finger_pip_flexion"
-    INDEX_FINGER_DIP_FLEXION = "index_finger_dip_flexion"
-    MIDDLE_FINGER_MCP_FLEXION = "middle_finger_mcp_flexion"
-    MIDDLE_FINGER_PIP_FLEXION = "middle_finger_pip_flexion"
-    MIDDLE_FINGER_DIP_FLEXION = "middle_finger_dip_flexion"
-    RING_FINGER_MCP_FLEXION = "ring_finger_mcp_flexion"
-    RING_FINGER_PIP_FLEXION = "ring_finger_pip_flexion"
-    RING_FINGER_DIP_FLEXION = "ring_finger_dip_flexion"
-    PINKY_FINGER_MCP_FLEXION = "pinky_finger_mcp_flexion"
-    PINKY_FINGER_PIP_FLEXION = "pinky_finger_pip_flexion"
-    PINKY_FINGER_DIP_FLEXION = "pinky_finger_dip_flexion"
+    WRIST_THUMB = (0, 1)
+    THUMB_CMC_PIP = (1, 2)
+    INDEX_CMC_PIP = (5, 6)
+    MIDDLE_CMC_PIP = (9, 10)
+    RING_CMC_PIP = (13, 14)
+    PINKY_CMC_PIP = (17, 18)
+    THUMB_PIP_DIP = (2, 3)
+    INDEX_PIP_DIP = (6, 7)
+    MIDDLE_PIP_DIP = (10, 11)
+    RING_PIP_DIP = (14, 15)
+    PINKY_PIP_DIP = (18, 19)
+    THUMB_DIP_TIP = (3, 4)
+    INDEX_DIP_TIP = (7, 8)
+    MIDDLE_DIP_TIP = (11, 12)
+    RING_DIP_TIP = (15, 16)
+    PINKY_DIP_TIP = (19, 20)
 
 
 @dataclass
@@ -77,12 +77,26 @@ class LandmarkCoords:
     y: float
     z: float
 
+    @property
+    def coords(self) -> np.ndarray:
+        return np.array([self.x, self.y, self.z])
 
-#### Interface Dataclasses for representing data to pass between components ####
+
+@dataclass(order=True)
+class AngleCoords:
+    """Represents a single angle coordinate.
+
+    Attributes:
+        theta (float): The theta (xy-plane) angle in degrees.
+        phi (float): The phi (z-axis) angle in degrees.
+    """
+
+    theta: float
+    phi: float
 
 
 @dataclass
-class GestureConfig:
+class Gesture:
     """Configuration defining a gesture for classification.
 
     Attributes:
@@ -93,9 +107,34 @@ class GestureConfig:
     """
 
     name: str
-    min_value: dict[Landmark, LandmarkCoords]
-    max_value: dict[Landmark, LandmarkCoords]
     time_delay: float
+    thresholds: dict[Angle, tuple[AngleCoords, AngleCoords]]
+
+    def check_gesture(
+        self, angles: dict[Angle, AngleCoords], duration: float
+    ) -> bool:
+        """Check if the given angles match the gesture thresholds."""
+        matching = [
+            angle in angles and min_val <= angles[angle] <= max_val
+            for angle, (min_val, max_val) in self.thresholds.items()
+        ]
+        return all(matching) and duration >= self.time_delay
+
+
+@dataclass
+class GestureConfig:
+    gestures: list[Gesture]
+
+    def load_from_file(self, file_path: str) -> None:
+        """Load gesture configurations from a .yaml config file."""
+        raise NotImplementedError
+
+    def save_to_file(self, file_path: str) -> None:
+        """Save gesture configurations to a .yaml config file."""
+        raise NotImplementedError
+
+
+#### Interface Dataclasses for representing data to pass between components ####
 
 
 @dataclass
@@ -119,7 +158,40 @@ class LandmarkResult:
     def _calculate_hand_angles(self) -> dict[Angle, float]:
         """Calculates the angles between the landmarks of the hand."""
         angles = {}
-        # TODO: Implement angle calculation logic here
+        palm_normal = np.cross(
+            (
+                self.world_landmarks[Landmark.WRIST].coords
+                - self.world_landmarks[Landmark.INDEX_FINGER_MCP].coords
+            ),
+            (
+                self.world_landmarks[Landmark.WRIST].coords
+                - self.world_landmarks[Landmark.PINKY_FINGER_MCP].coords
+            ),
+        )  # calculate wrist axis as reference
+        palm_normal = palm_normal / np.linalg.norm(palm_normal)  # normalize
+        for angle in Angle:
+            # Calculate angle between two points
+            l1, l2 = Landmark(angle.value[0]), Landmark(angle.value[1])
+            assert (
+                l1 in self.landmarks and l2 in self.landmarks
+            ), f"Landmarks {l1} and {l2} must be present to calculate angle {angle}"
+            vec = (
+                self.world_landmarks[l2].coords
+                - self.world_landmarks[l1].coords
+            )
+            vec = vec / np.linalg.norm(vec)  # normalize
+            z_proj = (
+                np.array([0, 0, 1])
+                - np.dot(np.array([0, 0, 1]), palm_normal) * palm_normal
+            )
+            vec_proj = vec - np.dot(vec, palm_normal) * palm_normal
+            theta = (
+                np.arccos(np.dot(vec_proj, z_proj)) * 180 / np.pi
+            )  # angle in xy-plane
+            phi = (
+                np.arccos(np.dot(vec, palm_normal)) * 180 / np.pi
+            )  # angle from z-axis
+            angles[angle] = AngleCoords(theta=theta, phi=phi)
         return angles
 
 
