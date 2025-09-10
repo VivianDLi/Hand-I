@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import override
 
 import mediapipe as mp
-import numpy as np
 from mediapipe.tasks.python.core.base_options import BaseOptions
 from mediapipe.tasks.python.vision.core.vision_task_running_mode import (
     VisionTaskRunningMode as RunningMode,
@@ -17,8 +16,9 @@ from handi.types import (
     EventDataType,
     Landmark,
     LandmarkCoords,
+    LandmarkPrediction,
     LandmarkPredictorInterface,
-    LandmarkResult,
+    StreamResult,
     TrackingResult,
 )
 
@@ -37,19 +37,17 @@ class MediapipeInterface(LandmarkPredictorInterface):
         )
 
     @override
-    def predict_landmarks(
-        self, image: np.ndarray, frame_timestamp_ms: int
-    ) -> None:
+    def predict_landmarks(self, data: StreamResult) -> None:
         """Implementation using Mediapipe for landmark prediction, connect to data received signal."""
         if not self.is_running:
             raise RuntimeError(
                 "MediapipeInterface is not running. Call start() before predicting landmarks."
             )
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=data.data)
         result = self.landmark_predictor.detect_for_video(
-            mp_image, frame_timestamp_ms
+            mp_image, data.timestamp
         )
-        self.process_results(result, mp_image, frame_timestamp_ms)
+        self.process_results(result, mp_image, data.timestamp)
 
     @override
     def _process_results(
@@ -57,7 +55,7 @@ class MediapipeInterface(LandmarkPredictorInterface):
         result: HandLandmarkerResult,
         original_image: mp.Image,
         timestamp_ms: int,
-    ) -> tuple[np.ndarray, TrackingResult]:
+    ) -> TrackingResult:
         """Implementation to send results after prediction, connect to data result signal."""
         lh = None
         rh = None
@@ -83,13 +81,13 @@ class MediapipeInterface(LandmarkPredictorInterface):
                 for idx, landmark in enumerate(hand_world_landmarks)
             }
             if handedness == "Left" and lh is None:
-                lh = LandmarkResult(
+                lh = LandmarkPrediction(
                     landmarks=landmarks,
                     world_landmarks=world_landmarks,
                     handedness=False,
                 )
             elif handedness == "Right" and rh is None:
-                rh = LandmarkResult(
+                rh = LandmarkPrediction(
                     landmarks=landmarks,
                     world_landmarks=world_landmarks,
                     handedness=True,
@@ -98,9 +96,12 @@ class MediapipeInterface(LandmarkPredictorInterface):
                 # If there's already a left/right hand detected, we skip additional hands
                 continue
         landmarks = TrackingResult(
-            left_hand=lh, right_hand=rh, timestamp=timestamp_ms
+            original_image=original_image.numpy_view(),
+            left_hand=lh,
+            right_hand=rh,
+            timestamp=timestamp_ms,
         )
-        return original_image.numpy_view(), landmarks
+        return landmarks
 
     @override
     def start(self) -> None:

@@ -1,6 +1,8 @@
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 import numpy as np
 from psygnal import Signal
@@ -96,55 +98,13 @@ class AngleCoords:
 
 
 @dataclass
-class Gesture:
-    """Configuration defining a gesture for classification.
-
-    Attributes:
-        name (str): The name of the gesture.
-        min_value (Dict[Landmark, LandmarkCoords]): The minimum value in world coordinates for each landmark of the hand. Assumes a right hand.
-        max_value (Dict[Landmark, LandmarkCoords]): The maximum value in world coordinates for each landmark of the hand. Assumes a right hand.
-        time_delay (float): The time delay in seconds for the gesture to be held before classification.
-    """
-
-    name: str
-    time_delay: float
-    thresholds: dict[Angle, tuple[AngleCoords, AngleCoords]]
-
-    def check_gesture(
-        self, angles: dict[Angle, AngleCoords], duration: float
-    ) -> bool:
-        """Check if the given angles match the gesture thresholds."""
-        matching = [
-            angle in angles and min_val <= angles[angle] <= max_val
-            for angle, (min_val, max_val) in self.thresholds.items()
-        ]
-        return all(matching) and duration >= self.time_delay
-
-
-@dataclass
-class GestureConfig:
-    gestures: list[Gesture]
-
-    def load_from_file(self, file_path: str) -> None:
-        """Load gesture configurations from a .yaml config file."""
-        raise NotImplementedError
-
-    def save_to_file(self, file_path: str) -> None:
-        """Save gesture configurations to a .yaml config file."""
-        raise NotImplementedError
-
-
-#### Interface Dataclasses for representing data to pass between components ####
-
-
-@dataclass
-class LandmarkResult:
+class LandmarkPrediction:
     """Result of landmark prediction.
 
     Attributes:
         landmarks (Dict[Landmark, LandmarkCoords]): A dictionary containing the predicted landmarks with their coordinates.
         world_landmarks (Dict[Landmark, LandmarkCoords]): A dictionary containing the predicted landmarks in world coordinates.
-        angles (Dict[str, float]): A dictionary containing the calculated angles based on the landmarks.
+        angles (Dict[Angle, AngleCoords]): A dictionary containing the calculated angles based on the landmarks.
         handedness (bool): Indicates if the hand is left (False) or right (True).
     """
 
@@ -153,9 +113,9 @@ class LandmarkResult:
     handedness: bool
 
     def __post_init__(self):
-        self.angles: dict[Angle, float] = self._calculate_hand_angles()
+        self.angles: dict[Angle, AngleCoords] = self._calculate_hand_angles()
 
-    def _calculate_hand_angles(self) -> dict[Angle, float]:
+    def _calculate_hand_angles(self) -> dict[Angle, AngleCoords]:
         """Calculates the angles between the landmarks of the hand."""
         angles = {}
         palm_normal = np.cross(
@@ -196,17 +156,95 @@ class LandmarkResult:
 
 
 @dataclass
+class Gesture:
+    """Configuration defining a gesture for classification.
+
+    Attributes:
+        name (str): The name of the gesture.
+        time_delay (float): The time delay in seconds for the gesture to be held before classification.
+        thresholds (Dict[Angle, Tuple[AngleCoords, AngleCoords]]): The minimum and maximum values for each angle of the hand.
+    """
+
+    name: str
+    time_delay: float
+    thresholds: dict[Angle, tuple[AngleCoords, AngleCoords]]
+
+    def check_gesture(self, angles: dict[Angle, AngleCoords]) -> bool:
+        """Check if the given angles match the gesture thresholds."""
+        matching = [
+            angle in angles and min_val <= angles[angle] <= max_val
+            for angle, (min_val, max_val) in self.thresholds.items()
+        ]
+        return all(matching)
+
+
+@dataclass
+class GestureConfig:
+    gestures: list[Gesture]
+    durations: list[float]
+
+    @staticmethod
+    def load_from_file(file_path: Path | str) -> "GestureConfig":
+        """Load gesture configurations from a .yaml config file."""
+        with open(file_path) as f:
+            gesture_dict = json.load(f)
+        gestures = []
+        for name, data in gesture_dict.items():
+            gesture = Gesture(
+                name=name,
+                time_delay=data["time_delay"],
+                thresholds=data["thresholds"],
+            )
+            gestures.append(gesture)
+        return GestureConfig(
+            gestures=gestures, durations=[0.0 for _ in gestures]
+        )
+
+    def reset_durations(self) -> None:
+        """Reset the durations for all gestures."""
+        self.durations = [0.0 for _ in self.gestures]
+
+    def save_to_file(self, file_path: str) -> None:
+        """Save gesture configurations to a .yaml config file."""
+        gesture_dict = {}
+        for gesture in self.gestures:
+            gesture_dict[gesture.name] = {
+                "time_delay": gesture.time_delay,
+                "thresholds": gesture.thresholds,
+            }
+        with open(file_path, "w") as f:
+            json.dump(gesture_dict, f, indent=4)
+
+
+#### Interface Dataclasses for representing data to pass between components ####
+
+
+@dataclass
+class StreamResult:
+    """Result of a data stream.
+
+    Attributes:
+        data (np.ndarray): The data from the stream.
+        timestamp (int): The timestamp when the data was received.
+    """
+
+    data: np.ndarray
+    timestamp: int
+
+
+@dataclass
 class TrackingResult:
     """Result of tracking hands.
 
     Attributes:
-        left_hand (Optional[LandmarkResult]): The result of landmark prediction for the left hand.
-        right_hand (Optional[LandmarkResult]): The result of landmark prediction for the right hand.
+        left_hand (Optional[LandmarkPrediction]): The result of landmark prediction for the left hand.
+        right_hand (Optional[LandmarkPrediction]): The result of landmark prediction for the right hand.
         timestamp (float): The timestamp when the tracking was performed.
     """
 
-    left_hand: LandmarkResult | None = None
-    right_hand: LandmarkResult | None = None
+    original_image: np.ndarray
+    left_hand: LandmarkPrediction | None = None
+    right_hand: LandmarkPrediction | None = None
     timestamp: float = 0.0
 
 
@@ -215,14 +253,13 @@ class GestureResult:
     """Result of gesture classification.
 
     Attributes:
-        gesture (str): The name of the classified gesture.
-        duration (float): The duration in seconds for which the gesture was held.
-        handedness (bool): Indicates if the hand is left (False) or right (True).
+        left_hand (Optional[Gesture]): The result of gesture classification for the left hand.
+        right_hand (Optional[Gesture]): The result of gesture classification for the right hand.
     """
 
-    gesture: str
-    duration: float
-    handedness: bool
+    landmark_result: TrackingResult
+    left_hand: Gesture | None = None
+    right_hand: Gesture | None = None
 
 
 #### Abstract Base Classes for Interface Components ####
@@ -236,16 +273,16 @@ class StreamInterface(ABC):
     is_streaming: bool = False
 
     @abstractmethod
-    def _read_frame(self) -> tuple[np.ndarray, int]:
+    def _read_frame(self, *args, **kwargs) -> StreamResult:
         """Read a frame from the data stream."""
         raise NotImplementedError
 
-    def read_frame(self, *args) -> bool:
+    def read_frame(self, *args, **kwargs) -> bool:
         """Read a frame and emit the frame read signal."""
-        frame, timestamp_ms = self._read_frame()
-        if timestamp_ms == -1:
+        result = self._read_frame(*args, **kwargs)
+        if result.timestamp == -1:
             return False
-        self.frame_read.emit(frame, timestamp_ms)
+        self.frame_read.emit(result.data, result.timestamp)
         return True
 
     @abstractmethod
@@ -267,27 +304,19 @@ class LandmarkPredictorInterface(ABC):
     is_running: bool = False
 
     @abstractmethod
-    def predict_landmarks(
-        self, image: np.ndarray, frame_timestamp_ms: int
-    ) -> None:
+    def predict_landmarks(self, data: StreamResult) -> None:
         """Predict landmarks from the given image. To be connected to frame received signal."""
         raise NotImplementedError
 
     @abstractmethod
-    def _process_results(
-        self, result, original_image, timestamp_ms: int
-    ) -> tuple[np.ndarray, TrackingResult]:
+    def _process_results(self, *args, **kwargs) -> TrackingResult:
         """Processes the results into standard form after landmark prediction."""
         raise NotImplementedError
 
-    def process_results(
-        self, result, original_image, timestamp_ms: int
-    ) -> None:
+    def process_results(self, *args, **kwargs) -> None:
         """Processes the results into standard form after landmark prediction. To emit the landmark predicted signal."""
-        data, landmarks = self._process_results(
-            result, original_image, timestamp_ms
-        )
-        self.landmark_predicted.emit(data, landmarks)
+        landmarks = self._process_results(*args, **kwargs)
+        self.landmark_predicted.emit(landmarks)
 
     @abstractmethod
     def start(self) -> None:
@@ -303,6 +332,7 @@ class LandmarkPredictorInterface(ABC):
 class GestureClassifierInterface(ABC):
     """Abstract base class for gesture classifier interfaces."""
 
+    config: GestureConfig
     gesture_classified = Signal(GestureResult)
     is_running: bool = False
 
@@ -312,13 +342,13 @@ class GestureClassifierInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def _process_results(self, result) -> GestureResult:
+    def _process_results(self, *args, **kwargs) -> GestureResult:
         """Processes the results into standard form after gesture classification."""
         raise NotImplementedError
 
-    def process_results(self, result) -> None:
+    def process_results(self, *args, **kwargs) -> None:
         """Processes the results into standard form after gesture classification. To emit the gesture classified signal."""
-        gesture = self._process_results(result)
+        gesture = self._process_results(*args, **kwargs)
         self.gesture_classified.emit(gesture)
 
     @abstractmethod
@@ -329,6 +359,27 @@ class GestureClassifierInterface(ABC):
     @abstractmethod
     def stop(self) -> None:
         """Close the gesture classifier and release resources."""
+        raise NotImplementedError
+
+
+class PostInterface(ABC):
+    """Abstract base class for post-processing interfaces."""
+
+    is_running: bool = False
+
+    @abstractmethod
+    def process_results(self, data: GestureResult) -> None:
+        """Process the results from landmark prediction or gesture classification."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def start(self) -> None:
+        """Start the post-processor."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def stop(self) -> None:
+        """Close the post-processor and release resources."""
         raise NotImplementedError
 
 
@@ -344,6 +395,7 @@ class EventManager:
             EventDataType, list[LandmarkPredictorInterface]
         ] = {dtype: [] for dtype in EventDataType}
         self.classifiers: list[GestureClassifierInterface] = []
+        self.post_processors: list[PostInterface] = []
 
     def connect_stream(self, stream: StreamInterface):
         """Connect a stream to the event manager."""
@@ -404,7 +456,42 @@ class EventManager:
                     predictor.landmark_predicted.disconnect(
                         classifier.classify_gesture
                     )
+            # Disconnect from all post-processors
+            classifier.gesture_classified.disconnect()
         self.classifiers.remove(classifier)
+
+    def connect_post_processor(self, processor: PostInterface):
+        """Connect a post-processor to the event manager."""
+        if processor not in self.post_processors:
+            self.post_processors.append(processor)
+            # Connect all valid classifiers
+            for classifier in self.classifiers:
+                classifier.gesture_classified.connect(
+                    processor.process_results
+                )
+
+    def disconnect_post_processor(self, processor: PostInterface):
+        """Disconnect a post-processor from the event manager."""
+        if processor in self.post_processors:
+            # Disconnect all connected classifiers
+            for classifier in self.classifiers:
+                classifier.gesture_classified.disconnect(
+                    processor.process_results
+                )
+        self.post_processors.remove(processor)
+
+    def open(self):
+        """Open all connected components."""
+        for dtype_predictors in self.predictors.values():
+            for predictor in dtype_predictors:
+                predictor.start()
+        for classifier in self.classifiers:
+            classifier.start()
+        for processor in self.post_processors:
+            processor.start()
+        for dtype_streams in self.streams.values():
+            for stream in dtype_streams:
+                stream.start()
 
     def close(self):
         """Close all connected components."""
@@ -416,3 +503,5 @@ class EventManager:
                 predictor.stop()
         for classifier in self.classifiers:
             classifier.stop()
+        for processor in self.post_processors:
+            processor.stop()

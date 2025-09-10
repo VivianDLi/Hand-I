@@ -1,7 +1,6 @@
-import cv2
 import numpy as np
 
-from handi.types import EventDataType, StreamInterface
+from handi.types import EventDataType, StreamInterface, StreamResult
 
 
 class CameraStream(StreamInterface):
@@ -9,17 +8,21 @@ class CameraStream(StreamInterface):
         self.data_type = EventDataType.IMAGE
         self.camera_id = camera_id
 
-    def _read_frame(self) -> tuple[np.ndarray, int]:
+    def _read_frame(self) -> StreamResult:
+        import cv2
+
         if not self.is_streaming:
-            return np.empty((0, 0, 3), dtype=np.uint8), -1
+            return StreamResult(np.empty((0, 0, 3), dtype=np.uint8), -1)
         ret, frame = self.cap.read()
         if not ret:
-            return np.empty((0, 0, 3), dtype=np.uint8), -1
+            return StreamResult(np.empty((0, 0, 3), dtype=np.uint8), -1)
         timestamp_ms = int(cv2.getTickCount() / cv2.getTickFrequency() * 1000)
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        return rgb_frame, timestamp_ms
+        return StreamResult(rgb_frame, timestamp_ms)
 
     def start(self):
+        import cv2
+
         if self.is_streaming:
             return
         self.cap = cv2.VideoCapture(self.camera_id)
