@@ -1,3 +1,4 @@
+import contextlib
 from pathlib import Path
 from typing import override
 
@@ -112,5 +113,6 @@ class MediapipeInterface(LandmarkPredictorInterface):
 
     @override
     def stop(self) -> None:
-        self.landmark_predictor.close()
+        with contextlib.suppress(ValueError):
+            self.landmark_predictor.close()
         self.is_running = False

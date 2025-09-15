@@ -296,7 +296,7 @@ class StreamInterface(ABC):
 
     data_type: EventDataType
     frame_read = Signal(
-        np.ndarray, int
+        StreamResult
     )  # Signal emitting a frame and its timestamp in ms
     is_streaming: bool = False
 
@@ -310,7 +310,7 @@ class StreamInterface(ABC):
         result = self._read_frame(*args, **kwargs)
         if result.timestamp == -1:
             return False
-        self.frame_read.emit(result.data, result.timestamp)
+        self.frame_read.emit(result)
         return True
 
     @abstractmethod
@@ -328,7 +328,7 @@ class LandmarkPredictorInterface(ABC):
     """Abstract base class for landmark predictor interfaces."""
 
     data_type: EventDataType
-    landmark_predicted = Signal(np.ndarray, TrackingResult)
+    landmark_predicted = Signal(TrackingResult)
     is_running: bool = False
 
     @abstractmethod

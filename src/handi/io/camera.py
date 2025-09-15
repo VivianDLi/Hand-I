@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 
 from handi.types import EventDataType, StreamInterface, StreamResult
@@ -26,12 +28,21 @@ class CameraStream(StreamInterface):
         if self.is_streaming:
             return
         self.cap = cv2.VideoCapture(self.camera_id)
+        # Check if the webcam is opened correctly
+        if self.cap.isOpened() and not self.cap.read()[0]:
+            self.cap.release()
+            logging.warning(
+                "Unable to access the camera. Trying with CAP_DSHOW backend."
+            )
+            self.cap = cv2.VideoCapture(self.camera_id, cv2.CAP_DSHOW)
+
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.is_streaming = True
 
         while self.cap.isOpened() and self.is_streaming:
             ret = self.read_frame()
             if not ret:
+                logging.error("Failed to read frame from camera.")
                 break
 
     def stop(self):
