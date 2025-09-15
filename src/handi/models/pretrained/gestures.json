@@ -1,0 +1,71 @@
+{
+    "test": {
+        "time_delay": 0.5,
+        "thresholds": {
+            "WRIST_THUMB": [
+                0,
+                360
+            ],
+            "THUMB_CMC_PIP": [
+                0,
+                360
+            ],
+            "INDEX_CMC_PIP": [
+                0,
+                360
+            ],
+            "MIDDLE_CMC_PIP": [
+                0,
+                360
+            ],
+            "RING_CMC_PIP": [
+                0,
+                360
+            ],
+            "PINKY_CMC_PIP": [
+                0,
+                360
+            ],
+            "THUMB_PIP_DIP": [
+                0,
+                360
+            ],
+            "INDEX_PIP_DIP": [
+                0,
+                360
+            ],
+            "MIDDLE_PIP_DIP": [
+                0,
+                360
+            ],
+            "RING_PIP_DIP": [
+                0,
+                360
+            ],
+            "PINKY_PIP_DIP": [
+                0,
+                360
+            ],
+            "THUMB_DIP_TIP": [
+                0,
+                360
+            ],
+            "INDEX_DIP_TIP": [
+                0,
+                360
+            ],
+            "MIDDLE_DIP_TIP": [
+                0,
+                360
+            ],
+            "RING_DIP_TIP": [
+                0,
+                360
+            ],
+            "PINKY_DIP_TIP": [
+                0,
+                360
+            ]
+        }
+    }
+}

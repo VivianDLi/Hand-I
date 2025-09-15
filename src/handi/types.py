@@ -89,9 +89,25 @@ class AngleCoords:
     """Represents a single angle coordinate.
 
     Attributes:
-        theta (float): The theta (xy-plane) angle in degrees.
-        phi (float): The phi (z-axis) angle in degrees.
+        theta (float): The theta (xy-plane) angle in radians.
+        phi (float): The phi (z-axis) angle in radians.
     """
+
+    @staticmethod
+    def from_degrees(theta: float, phi: float) -> "AngleCoords":
+        """Create AngleCoords from degrees."""
+        return AngleCoords(
+            theta=np.deg2rad(theta),
+            phi=np.deg2rad(phi),
+        )
+
+    @staticmethod
+    def to_degrees(theta: float, phi: float) -> dict[str, float]:
+        """Convert AngleCoords to degrees."""
+        return {
+            "theta": np.rad2deg(theta),
+            "phi": np.rad2deg(phi),
+        }
 
     theta: float
     phi: float
@@ -135,22 +151,15 @@ class LandmarkPrediction:
             assert (
                 l1 in self.landmarks and l2 in self.landmarks
             ), f"Landmarks {l1} and {l2} must be present to calculate angle {angle}"
-            vec = (
-                self.world_landmarks[l2].coords
-                - self.world_landmarks[l1].coords
-            )
+            vec = self.world_landmarks[l2].coords - self.world_landmarks[l1].coords
             vec = vec / np.linalg.norm(vec)  # normalize
             z_proj = (
                 np.array([0, 0, 1])
                 - np.dot(np.array([0, 0, 1]), palm_normal) * palm_normal
             )
             vec_proj = vec - np.dot(vec, palm_normal) * palm_normal
-            theta = (
-                np.arccos(np.dot(vec_proj, z_proj)) * 180 / np.pi
-            )  # angle in xy-plane
-            phi = (
-                np.arccos(np.dot(vec, palm_normal)) * 180 / np.pi
-            )  # angle from z-axis
+            theta = np.arccos(np.dot(vec_proj, z_proj))  # angle in xy-plane
+            phi = np.arccos(np.dot(vec, palm_normal))  # angle from z-axis
             angles[angle] = AngleCoords(theta=theta, phi=phi)
         return angles
 
@@ -193,12 +202,16 @@ class GestureConfig:
             gesture = Gesture(
                 name=name,
                 time_delay=data["time_delay"],
-                thresholds=data["thresholds"],
+                thresholds={
+                    angle: (
+                        AngleCoords.from_degrees(**min_val),
+                        AngleCoords.from_degrees(**max_val),
+                    )
+                    for angle, (min_val, max_val) in data["thresholds"].items()
+                },
             )
             gestures.append(gesture)
-        return GestureConfig(
-            gestures=gestures, durations=[0.0 for _ in gestures]
-        )
+        return GestureConfig(gestures=gestures, durations=[0.0 for _ in gestures])
 
     def reset_durations(self) -> None:
         """Reset the durations for all gestures."""
@@ -210,7 +223,13 @@ class GestureConfig:
         for gesture in self.gestures:
             gesture_dict[gesture.name] = {
                 "time_delay": gesture.time_delay,
-                "thresholds": gesture.thresholds,
+                "thresholds": {
+                    angle: (
+                        AngleCoords.to_degrees(**min_val),
+                        AngleCoords.to_degrees(**max_val),
+                    )
+                    for angle, (min_val, max_val) in gesture.thresholds.items()
+                },
             }
         with open(file_path, "w") as f:
             json.dump(gesture_dict, f, indent=4)
@@ -391,9 +410,9 @@ class EventManager:
         self.streams: dict[EventDataType, list[StreamInterface]] = {
             dtype: [] for dtype in EventDataType
         }
-        self.predictors: dict[
-            EventDataType, list[LandmarkPredictorInterface]
-        ] = {dtype: [] for dtype in EventDataType}
+        self.predictors: dict[EventDataType, list[LandmarkPredictorInterface]] = {
+            dtype: [] for dtype in EventDataType
+        }
         self.classifiers: list[GestureClassifierInterface] = []
         self.post_processors: list[PostInterface] = []
 
@@ -421,9 +440,7 @@ class EventManager:
                 stream.frame_read.connect(predictor.predict_landmarks)
             # Connect to all classifiers
             for classifier in self.classifiers:
-                predictor.landmark_predicted.connect(
-                    classifier.classify_gesture
-                )
+                predictor.landmark_predicted.connect(classifier.classify_gesture)
         self.predictors[predictor.data_type].append(predictor)
 
     def disconnect_predictor(self, predictor: LandmarkPredictorInterface):
@@ -443,9 +460,7 @@ class EventManager:
             # Connect all valid predictors
             for dtype in self.predictors:
                 for predictor in self.predictors[dtype]:
-                    predictor.landmark_predicted.connect(
-                        classifier.classify_gesture
-                    )
+                    predictor.landmark_predicted.connect(classifier.classify_gesture)
 
     def disconnect_classifier(self, classifier: GestureClassifierInterface):
         """Disconnect a gesture classifier from the event manager."""
@@ -453,9 +468,7 @@ class EventManager:
             # Disconnect all connected predictors
             for dtype in self.predictors:
                 for predictor in self.predictors[dtype]:
-                    predictor.landmark_predicted.disconnect(
-                        classifier.classify_gesture
-                    )
+                    predictor.landmark_predicted.disconnect(classifier.classify_gesture)
             # Disconnect from all post-processors
             classifier.gesture_classified.disconnect()
         self.classifiers.remove(classifier)
@@ -466,18 +479,14 @@ class EventManager:
             self.post_processors.append(processor)
             # Connect all valid classifiers
             for classifier in self.classifiers:
-                classifier.gesture_classified.connect(
-                    processor.process_results
-                )
+                classifier.gesture_classified.connect(processor.process_results)
 
     def disconnect_post_processor(self, processor: PostInterface):
         """Disconnect a post-processor from the event manager."""
         if processor in self.post_processors:
             # Disconnect all connected classifiers
             for classifier in self.classifiers:
-                classifier.gesture_classified.disconnect(
-                    processor.process_results
-                )
+                classifier.gesture_classified.disconnect(processor.process_results)
         self.post_processors.remove(processor)
 
     def open(self):
