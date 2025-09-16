@@ -1,16 +1,16 @@
 import numpy as np
 
 from handi.types import (
-    Landmark,
     Angle,
     GestureResult,
+    Landmark,
     PostInterface,
     StreamResult,
     TrackingResult,
 )
 
 COORD_OFFSETS = {
-    Landmark.THUMB_CMC: (0, 0),
+    Landmark.WRIST: (0, 0),
     Landmark.INDEX_FINGER_MCP: (-5, -20),
     Landmark.MIDDLE_FINGER_MCP: (0, -20),
     Landmark.RING_FINGER_MCP: (5, -20),
@@ -31,7 +31,9 @@ class LandmarkVisualizer(PostInterface):
         out_frame = frame.copy()
         out_frame = cv2.cvtColor(out_frame, cv2.COLOR_RGB2BGR)
         if landmarks is not None:
-            for hand in [landmarks.left_hand, landmarks.right_hand]:
+            for i, hand in enumerate(
+                [landmarks.left_hand, landmarks.right_hand]
+            ):
                 if hand is not None:
                     x = 0
                     y = 0
@@ -48,7 +50,7 @@ class LandmarkVisualizer(PostInterface):
                             thickness=-1,
                         )
                     # Draw hand angles
-                    hand_center = (50, 30 + i * 40)
+                    hand_center = (100, 50 + i * 50)
                     start_points = {
                         landmark: (
                             hand_center[0] + offset[0],
@@ -60,10 +62,17 @@ class LandmarkVisualizer(PostInterface):
                         if angle in hand.angles:
                             coords = hand.angles[angle]
                             # Assuming palm axis is facing out of the screen
-                            r = np.sin(coords.phi)
-                            x, y = r * np.cos(coords.theta), r * np.sin(coords.theta)
-                            start_point = start_points[Landmark(angle.value[0])]
-                            end_point = (start_point[0] + x, start_point[1] + y)
+                            r = int(10 * np.sin(coords.phi))
+                            x, y = int(r * np.cos(coords.theta)), -int(
+                                r * np.sin(coords.theta)
+                            )
+                            start_point = start_points[
+                                Landmark(angle.value[0])
+                            ]
+                            end_point = (
+                                start_point[0] + x,
+                                start_point[1] + y,
+                            )
                             out_frame = cv2.line(
                                 out_frame,
                                 pt1=start_point,
@@ -71,15 +80,17 @@ class LandmarkVisualizer(PostInterface):
                                 color=color,
                                 thickness=2,
                             )
-                            start_points[Landmark(angle.value[1])] = (x, y)
+                            start_points[Landmark(angle.value[1])] = end_point
         if gestures is not None:
-            for i, gesture in enumerate([gestures.left_hand, gestures.right_hand]):
+            for i, gesture in enumerate(
+                [gestures.left_hand, gestures.right_hand]
+            ):
                 if gesture is not None:
                     color = (255, 0, 0) if i == 0 else (0, 0, 255)
                     out_frame = cv2.putText(
                         out_frame,
                         f"{gesture.name}",
-                        (10, 30 + i * 40),
+                        (50, 50 + i * 50),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         1,
                         color,
