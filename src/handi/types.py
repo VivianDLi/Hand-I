@@ -48,17 +48,17 @@ class Landmark(Enum):
 
 class Angle(Enum):
     WRIST_THUMB = (0, 1)
-    THUMB_CMC_PIP = (1, 2)
-    INDEX_CMC_PIP = (5, 6)
-    MIDDLE_CMC_PIP = (9, 10)
-    RING_CMC_PIP = (13, 14)
-    PINKY_CMC_PIP = (17, 18)
-    THUMB_PIP_DIP = (2, 3)
+    THUMB_CMC_MCP = (1, 2)
+    THUMB_MCP_IP = (2, 3)
+    INDEX_MCP_PIP = (5, 6)
+    MIDDLE_MCP_PIP = (9, 10)
+    RING_MCP_PIP = (13, 14)
+    PINKY_MCP_PIP = (17, 18)
+    THUMB_IP_DIP = (3, 4)
     INDEX_PIP_DIP = (6, 7)
     MIDDLE_PIP_DIP = (10, 11)
     RING_PIP_DIP = (14, 15)
     PINKY_PIP_DIP = (18, 19)
-    THUMB_DIP_TIP = (3, 4)
     INDEX_DIP_TIP = (7, 8)
     MIDDLE_DIP_TIP = (11, 12)
     RING_DIP_TIP = (15, 16)
@@ -136,12 +136,12 @@ class LandmarkPrediction:
         angles = {}
         palm_normal = np.cross(
             (
-                self.world_landmarks[Landmark.WRIST].coords
-                - self.world_landmarks[Landmark.INDEX_FINGER_MCP].coords
+                self.world_landmarks[Landmark.INDEX_FINGER_MCP].coords
+                - self.world_landmarks[Landmark.WRIST].coords
             ),
             (
-                self.world_landmarks[Landmark.WRIST].coords
-                - self.world_landmarks[Landmark.PINKY_FINGER_MCP].coords
+                self.world_landmarks[Landmark.PINKY_FINGER_MCP].coords
+                - self.world_landmarks[Landmark.WRIST].coords
             ),
         )  # calculate wrist axis as reference
         palm_normal = palm_normal / np.linalg.norm(palm_normal)  # normalize
@@ -149,19 +149,24 @@ class LandmarkPrediction:
             # Calculate angle between two points
             l1, l2 = Landmark(angle.value[0]), Landmark(angle.value[1])
             assert (
-                l1 in self.landmarks and l2 in self.landmarks
+                l1 in self.world_landmarks and l2 in self.world_landmarks
             ), f"Landmarks {l1} and {l2} must be present to calculate angle {angle}"
-            vec = (
-                self.world_landmarks[l2].coords
-                - self.world_landmarks[l1].coords
-            )
+            vec = self.world_landmarks[l2].coords - self.world_landmarks[l1].coords
             vec = vec / np.linalg.norm(vec)  # normalize
-            z_proj = (
-                np.array([0, 0, 1])
-                - np.dot(np.array([0, 0, 1]), palm_normal) * palm_normal
+            vec_perp = (
+                vec - np.dot(vec, palm_normal) * palm_normal
+            )  # perpendicular component
+            vec_ref = (
+                self.world_landmarks[Landmark.MIDDLE_FINGER_MCP].coords
+                - self.world_landmarks[Landmark.WRIST].coords
             )
-            vec_proj = vec - np.dot(vec, palm_normal) * palm_normal
-            theta = np.arccos(np.dot(vec_proj, z_proj))  # angle in xy-plane
+            vec_ref = vec_ref / np.linalg.norm(
+                vec_ref
+            )  # normalized vertical vector in palm plane
+            theta = np.arccos(np.dot(vec_perp, vec_ref))  # angle in xy-plane
+            # check direction
+            if np.dot(np.cross(vec_ref, vec_perp), palm_normal) >= 0:
+                theta = -theta
             phi = np.arccos(np.dot(vec, palm_normal))  # angle from z-axis
             angles[angle] = AngleCoords(theta=theta, phi=phi)
         return angles
@@ -214,9 +219,7 @@ class GestureConfig:
                 },
             )
             gestures.append(gesture)
-        return GestureConfig(
-            gestures=gestures, durations=[0.0 for _ in gestures]
-        )
+        return GestureConfig(gestures=gestures, durations=[0.0 for _ in gestures])
 
     def reset_durations(self) -> None:
         """Reset the durations for all gestures."""
@@ -230,12 +233,8 @@ class GestureConfig:
                 "time_delay": gesture.time_delay,
                 "thresholds": {
                     angle: (
-                        AngleCoords.to_degrees(
-                            theta=min_val.theta, phi=min_val.phi
-                        ),
-                        AngleCoords.to_degrees(
-                            theta=max_val.theta, phi=max_val.phi
-                        ),
+                        AngleCoords.to_degrees(theta=min_val.theta, phi=min_val.phi),
+                        AngleCoords.to_degrees(theta=max_val.theta, phi=max_val.phi),
                     )
                     for angle, (min_val, max_val) in gesture.thresholds.items()
                 },
@@ -295,9 +294,7 @@ class StreamInterface(ABC):
     """Abstract base class for stream interfaces."""
 
     data_type: EventDataType
-    frame_read = Signal(
-        StreamResult
-    )  # Signal emitting a frame and its timestamp in ms
+    frame_read = Signal(StreamResult)  # Signal emitting a frame and its timestamp in ms
     is_streaming: bool = False
 
     @abstractmethod
@@ -419,9 +416,9 @@ class EventManager:
         self.streams: dict[EventDataType, list[StreamInterface]] = {
             dtype: [] for dtype in EventDataType
         }
-        self.predictors: dict[
-            EventDataType, list[LandmarkPredictorInterface]
-        ] = {dtype: [] for dtype in EventDataType}
+        self.predictors: dict[EventDataType, list[LandmarkPredictorInterface]] = {
+            dtype: [] for dtype in EventDataType
+        }
         self.classifiers: list[GestureClassifierInterface] = []
         self.post_processors: list[PostInterface] = []
 
@@ -449,9 +446,7 @@ class EventManager:
                 stream.frame_read.connect(predictor.predict_landmarks)
             # Connect to all classifiers
             for classifier in self.classifiers:
-                predictor.landmark_predicted.connect(
-                    classifier.classify_gesture
-                )
+                predictor.landmark_predicted.connect(classifier.classify_gesture)
         self.predictors[predictor.data_type].append(predictor)
 
     def disconnect_predictor(self, predictor: LandmarkPredictorInterface):
@@ -471,9 +466,7 @@ class EventManager:
             # Connect all valid predictors
             for dtype in self.predictors:
                 for predictor in self.predictors[dtype]:
-                    predictor.landmark_predicted.connect(
-                        classifier.classify_gesture
-                    )
+                    predictor.landmark_predicted.connect(classifier.classify_gesture)
 
     def disconnect_classifier(self, classifier: GestureClassifierInterface):
         """Disconnect a gesture classifier from the event manager."""
@@ -481,9 +474,7 @@ class EventManager:
             # Disconnect all connected predictors
             for dtype in self.predictors:
                 for predictor in self.predictors[dtype]:
-                    predictor.landmark_predicted.disconnect(
-                        classifier.classify_gesture
-                    )
+                    predictor.landmark_predicted.disconnect(classifier.classify_gesture)
             # Disconnect from all post-processors
             classifier.gesture_classified.disconnect()
         self.classifiers.remove(classifier)
@@ -494,18 +485,14 @@ class EventManager:
             self.post_processors.append(processor)
             # Connect all valid classifiers
             for classifier in self.classifiers:
-                classifier.gesture_classified.connect(
-                    processor.process_results
-                )
+                classifier.gesture_classified.connect(processor.process_results)
 
     def disconnect_post_processor(self, processor: PostInterface):
         """Disconnect a post-processor from the event manager."""
         if processor in self.post_processors:
             # Disconnect all connected classifiers
             for classifier in self.classifiers:
-                classifier.gesture_classified.disconnect(
-                    processor.process_results
-                )
+                classifier.gesture_classified.disconnect(processor.process_results)
         self.post_processors.remove(processor)
 
     def open(self):

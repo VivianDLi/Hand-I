@@ -31,14 +31,12 @@ class LandmarkVisualizer(PostInterface):
         out_frame = frame.copy()
         out_frame = cv2.cvtColor(out_frame, cv2.COLOR_RGB2BGR)
         if landmarks is not None:
-            for i, hand in enumerate(
-                [landmarks.left_hand, landmarks.right_hand]
-            ):
+            for i, hand in enumerate([landmarks.left_hand, landmarks.right_hand]):
                 if hand is not None:
                     x = 0
                     y = 0
                     color = (255, 0, 0) if hand.handedness else (0, 0, 255)
-                    # Draw landmakrs on hand
+                    # Draw landmarks on hand
                     for landmark in hand.landmarks.values():
                         x = int(landmark.x * frame.shape[1])
                         y = int(landmark.y * frame.shape[0])
@@ -59,19 +57,43 @@ class LandmarkVisualizer(PostInterface):
                         for landmark, offset in COORD_OFFSETS.items()
                     }
                     for angle in Angle:
+                        # Draw connecting lines
+                        start_landmark, end_landmark = Landmark(
+                            angle.value[0]
+                        ), Landmark(angle.value[1])
+                        if (
+                            start_landmark in hand.landmarks
+                            and end_landmark in hand.landmarks
+                        ):
+                            start_coords = hand.landmarks[start_landmark]
+                            end_coords = hand.landmarks[end_landmark]
+                            start_point = (
+                                int(start_coords.x * frame.shape[1]),
+                                int(start_coords.y * frame.shape[0]),
+                            )
+                            end_point = (
+                                int(end_coords.x * frame.shape[1]),
+                                int(end_coords.y * frame.shape[0]),
+                            )
+                            out_frame = cv2.line(
+                                out_frame,
+                                pt1=start_point,
+                                pt2=end_point,
+                                color=color,
+                                thickness=2,
+                            )
+                        # Draw normalized hand position
                         if angle in hand.angles:
                             coords = hand.angles[angle]
                             # Assuming palm axis is facing out of the screen
                             r = int(10 * np.sin(coords.phi))
-                            x, y = int(r * np.cos(coords.theta)), -int(
-                                r * np.sin(coords.theta)
+                            x, y = -int(r * np.sin(coords.theta)), int(
+                                r * np.cos(coords.theta)
                             )
-                            start_point = start_points[
-                                Landmark(angle.value[0])
-                            ]
+                            start_point = start_points[Landmark(angle.value[0])]
                             end_point = (
                                 start_point[0] + x,
-                                start_point[1] + y,
+                                start_point[1] - y,
                             )
                             out_frame = cv2.line(
                                 out_frame,
@@ -82,9 +104,7 @@ class LandmarkVisualizer(PostInterface):
                             )
                             start_points[Landmark(angle.value[1])] = end_point
         if gestures is not None:
-            for i, gesture in enumerate(
-                [gestures.left_hand, gestures.right_hand]
-            ):
+            for i, gesture in enumerate([gestures.left_hand, gestures.right_hand]):
                 if gesture is not None:
                     color = (255, 0, 0) if i == 0 else (0, 0, 255)
                     out_frame = cv2.putText(
