@@ -27,7 +27,8 @@ MODEL_PATH = Path(__file__).parent / "pretrained" / "hand_landmarker.task"
 
 
 class MediapipeInterface(LandmarkPredictorInterface):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.data_type = EventDataType.IMAGE
         self.base_options = BaseOptions(model_asset_path=str(MODEL_PATH))
         self.running_mode = RunningMode.VIDEO

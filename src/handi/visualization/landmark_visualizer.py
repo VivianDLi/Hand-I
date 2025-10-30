@@ -19,6 +19,10 @@ COORD_OFFSETS = {
 
 
 class LandmarkVisualizer(PostInterface):
+    def __init__(self, *args, draw_angles: bool = False, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.draw_angles = draw_angles
+
     def _show_frame(
         self,
         frame: np.ndarray,
@@ -82,6 +86,17 @@ class LandmarkVisualizer(PostInterface):
                                 color=color,
                                 thickness=2,
                             )
+                            if self.draw_angles:
+                                out_frame = cv2.putText(
+                                    out_frame,
+                                    f"{angle.value[0]:.2f}, {angle.value[1]:.2f}",
+                                    (start_point[0] + 5, start_point[1] - 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    1,
+                                    color,
+                                    2,
+                                    cv2.LINE_AA,
+                                )
                         # Draw normalized hand position
                         if angle in hand.angles:
                             coords = hand.angles[angle]

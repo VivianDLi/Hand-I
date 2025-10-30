@@ -327,6 +327,14 @@ class LandmarkPredictorInterface(ABC):
     data_type: EventDataType
     landmark_predicted = Signal(TrackingResult)
     is_running: bool = False
+    
+    def __init__(self, rolling_average_window: int = 0):
+        super().__init__()
+        self.rolling_average_window = rolling_average_window
+        self._landmark_history = {
+            "left": {landmark: [] for landmark in Landmark},
+            "right": {landmark: [] for landmark in Landmark},
+        }
 
     @abstractmethod
     def predict_landmarks(self, data: StreamResult) -> None:
@@ -341,6 +349,41 @@ class LandmarkPredictorInterface(ABC):
     def process_results(self, *args, **kwargs) -> None:
         """Processes the results into standard form after landmark prediction. To emit the landmark predicted signal."""
         landmarks = self._process_results(*args, **kwargs)
+        if self.rolling_average_window > 1:
+            # Apply rolling average smoothing to landmarks
+            self._landmark_history.append(landmarks)
+            if len(self._landmark_history) > self.rolling_average_window:
+                self._landmark_history.pop(0)
+            avg_screen_coords = {
+                landmark: np.mean([hand.landmarks.values()[landmark].coords for hand in [land.left_hand for land in self._landmark_history if land.left_hand is not None]], axis=0)
+                for landmark in Landmark
+            }
+            avg_screen_coords = np.mean([land.left_hand.landmarks for land in self._landmark_history], axis=0)
+            avg_world_coords = np.mean([land.left_hand.world_landmarks for land in self._landmark_history], axis=0)
+            avg_handedness = np.mean([land.left_hand.handedness for land in self._landmark_history], axis=0)
+            avg_left_hand = LandmarkPrediction(
+                landmarks=avg_screen_coords,
+                world_landmarks=avg_world_coords,
+                handedness=False,
+            )
+            for hand in [landmarks.left_hand, landmarks.right_hand]:
+                if hand is not None:
+                    for landmark in hand.landmarks.values():
+                        if not hasattr(landmark, "history"):
+                            landmark.history = []
+                        landmark.history.append(
+                            np.array([landmark.x, landmark.y, landmark.z])
+                        )
+                        if len(landmark.history) > self.rolling_average_window:
+                            landmark.history.pop(0)
+                        avg_coords = np.mean(
+                            landmark.history, axis=0
+                        )
+                        landmark.x, landmark.y, landmark.z = (
+                            avg_coords[0],
+                            avg_coords[1],
+                            avg_coords[2],
+                        )
         self.landmark_predicted.emit(landmarks)
 
     @abstractmethod

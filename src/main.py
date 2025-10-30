@@ -7,9 +7,9 @@ from handi.visualization.landmark_visualizer import LandmarkVisualizer
 if __name__ == "__main__":
     event_manager = EventManager()
     stream = CameraStream(0)
-    interface = MediapipeInterface()
+    interface = MediapipeInterface(rolling_average_window=5)
     classifier = GestureClassifier()
-    visualizer = LandmarkVisualizer()
+    visualizer = LandmarkVisualizer(draw_angles=True)
 
     event_manager.connect_stream(stream)
     event_manager.connect_predictor(interface)
